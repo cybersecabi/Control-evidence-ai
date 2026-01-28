@@ -1,12 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase';
 
 export default function LoginPage() {
-    const router = useRouter();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState(null);
@@ -26,17 +24,15 @@ export default function LoginPage() {
 
             if (error) {
                 setError(error.message);
+                setIsLoading(false);
                 return;
             }
 
-            console.log('Login successful:', data);
-
-            // Use hard redirect to ensure cookies are set
+            // Hard redirect after successful login
             window.location.href = '/';
         } catch (err) {
             console.error('Login error:', err);
             setError('An unexpected error occurred');
-        } finally {
             setIsLoading(false);
         }
     };

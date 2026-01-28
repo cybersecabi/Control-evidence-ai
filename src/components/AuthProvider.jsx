@@ -27,15 +27,10 @@ export function AuthProvider({ children }) {
 
         // Listen for auth changes
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
-            async (event, session) => {
+            (event, session) => {
                 setSession(session);
                 setUser(session?.user ?? null);
                 setIsLoading(false);
-
-                // Force refresh on sign in/out to update middleware state
-                if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
-                    window.location.reload();
-                }
             }
         );
 
