@@ -1,40 +1,15 @@
+import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
 // Helper to get authenticated user from cookies
 async function getAuthenticatedUser() {
-    const cookieStore = await cookies();
-    const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-        {
-            cookies: {
-                get(name) {
-                    return cookieStore.get(name)?.value;
-                },
-                set() { },
-                remove() { },
-            },
-        }
-    );
-
-    const { data: { user } } = await supabase.auth.getUser();
-    return user;
-}
-
-// GET /api/evidence - List evidence items for current user
-export async function GET(request) {
     try {
-        const user = await getAuthenticatedUser();
-        if (!user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
         const cookieStore = await cookies();
         const supabase = createServerClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL,
-            process.env.SUPABASE_SERVICE_ROLE_KEY,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
             {
                 cookies: {
                     get(name) {
@@ -45,6 +20,38 @@ export async function GET(request) {
                 },
             }
         );
+
+        const { data: { user } } = await supabase.auth.getUser();
+        return user;
+    } catch (error) {
+        console.error('Auth error:', error);
+        return null;
+    }
+}
+
+// Create admin client (service role)
+function createAdminClient() {
+    return createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY,
+        {
+            auth: {
+                autoRefreshToken: false,
+                persistSession: false,
+            },
+        }
+    );
+}
+
+// GET /api/evidence - List evidence items for current user
+export async function GET(request) {
+    try {
+        const user = await getAuthenticatedUser();
+        if (!user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const supabase = createAdminClient();
 
         const { searchParams } = new URL(request.url);
         const status = searchParams.get('status');
@@ -104,20 +111,7 @@ export async function POST(request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const cookieStore = await cookies();
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL,
-            process.env.SUPABASE_SERVICE_ROLE_KEY,
-            {
-                cookies: {
-                    get(name) {
-                        return cookieStore.get(name)?.value;
-                    },
-                    set() { },
-                    remove() { },
-                },
-            }
-        );
+        const supabase = createAdminClient();
 
         const formData = await request.formData();
         const file = formData.get('file');
