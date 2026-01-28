@@ -38,7 +38,9 @@ export default function SignupPage() {
                 return;
             }
 
-            setSuccess(true);
+            // Email confirmation disabled - redirect directly to dashboard
+            router.push('/');
+            router.refresh();
         } catch (err) {
             setError('An unexpected error occurred');
         } finally {
