@@ -1,23 +1,15 @@
+import { createBrowserClient as createSSRBrowserClient, createServerClient as createSSRServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 
 // Singleton browser client
 let browserClient = null;
 
-// Browser client (uses anon key) - SINGLETON
+// Browser client using SSR package for proper cookie handling
 export function createBrowserClient() {
   if (typeof window === 'undefined') {
-    // Server-side: create new instance each time
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-    if (!supabaseUrl || !supabaseAnonKey) {
-      throw new Error('Missing Supabase environment variables');
-    }
-
-    return createClient(supabaseUrl, supabaseAnonKey);
+    throw new Error('createBrowserClient should only be called on the client side');
   }
 
-  // Client-side: return singleton
   if (!browserClient) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -26,7 +18,7 @@ export function createBrowserClient() {
       throw new Error('Missing Supabase environment variables');
     }
 
-    browserClient = createClient(supabaseUrl, supabaseAnonKey);
+    browserClient = createSSRBrowserClient(supabaseUrl, supabaseAnonKey);
   }
 
   return browserClient;
