@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { signIn } from '@/lib/auth';
+import { createBrowserClient } from '@/lib/supabase';
 
 export default function LoginPage() {
     const router = useRouter();
@@ -18,16 +18,23 @@ export default function LoginPage() {
         setIsLoading(true);
 
         try {
-            const { data, error } = await signIn(email, password);
+            const supabase = createBrowserClient();
+            const { data, error } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+            });
 
             if (error) {
                 setError(error.message);
                 return;
             }
 
-            router.push('/');
-            router.refresh();
+            console.log('Login successful:', data);
+
+            // Use hard redirect to ensure cookies are set
+            window.location.href = '/';
         } catch (err) {
+            console.error('Login error:', err);
             setError('An unexpected error occurred');
         } finally {
             setIsLoading(false);

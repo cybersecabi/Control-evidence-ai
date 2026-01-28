@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { signUp } from '@/lib/auth';
+import { createBrowserClient } from '@/lib/supabase';
 
 export default function SignupPage() {
     const router = useRouter();
@@ -12,7 +12,6 @@ export default function SignupPage() {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [error, setError] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
-    const [success, setSuccess] = useState(false);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -31,54 +30,47 @@ export default function SignupPage() {
         setIsLoading(true);
 
         try {
-            const { data, error } = await signUp(email, password);
+            const supabase = createBrowserClient();
 
-            if (error) {
-                setError(error.message);
+            // Sign up
+            const { data, error: signUpError } = await supabase.auth.signUp({
+                email,
+                password,
+            });
+
+            if (signUpError) {
+                setError(signUpError.message);
                 return;
             }
 
-            // Email confirmation disabled - redirect directly to dashboard
-            router.push('/');
-            router.refresh();
+            console.log('Signup response:', data);
+
+            // If session exists, user is logged in
+            if (data.session) {
+                console.log('Session created, redirecting...');
+                window.location.href = '/';
+            } else if (data.user) {
+                // User created but needs to sign in
+                console.log('User created, signing in...');
+                const { error: signInError } = await supabase.auth.signInWithPassword({
+                    email,
+                    password,
+                });
+
+                if (signInError) {
+                    setError(signInError.message);
+                    return;
+                }
+
+                window.location.href = '/';
+            }
         } catch (err) {
+            console.error('Signup error:', err);
             setError('An unexpected error occurred');
         } finally {
             setIsLoading(false);
         }
     };
-
-    if (success) {
-        return (
-            <div style={{
-                minHeight: '100vh',
-                background: 'var(--bg-primary)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 'var(--space-lg)',
-            }}>
-                <div style={{ width: '100%', maxWidth: '360px', textAlign: 'center' }}>
-                    <span style={{
-                        fontStyle: 'italic',
-                        fontWeight: 700,
-                        fontSize: '2rem',
-                        letterSpacing: '-0.05em',
-                        color: 'var(--text-primary)'
-                    }}>CE</span>
-                    <h2 style={{ marginTop: 'var(--space-lg)', marginBottom: 'var(--space-sm)' }}>
-                        Check your email
-                    </h2>
-                    <p style={{ color: 'var(--text-tertiary)', marginBottom: 'var(--space-lg)' }}>
-                        We've sent a confirmation link to {email}
-                    </p>
-                    <Link href="/login" className="btn btn-primary" style={{ width: '100%' }}>
-                        Back to Sign In
-                    </Link>
-                </div>
-            </div>
-        );
-    }
 
     return (
         <div style={{
