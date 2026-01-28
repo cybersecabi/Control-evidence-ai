@@ -1,12 +1,52 @@
-import { createServerClient } from '@/lib/supabase';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
-// GET /api/evidence - List all evidence items
+// Helper to get authenticated user from cookies
+async function getAuthenticatedUser() {
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        {
+            cookies: {
+                get(name) {
+                    return cookieStore.get(name)?.value;
+                },
+                set() { },
+                remove() { },
+            },
+        }
+    );
+
+    const { data: { user } } = await supabase.auth.getUser();
+    return user;
+}
+
+// GET /api/evidence - List evidence items for current user
 export async function GET(request) {
     try {
-        const supabase = createServerClient();
-        const { searchParams } = new URL(request.url);
+        const user = await getAuthenticatedUser();
+        if (!user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
 
+        const cookieStore = await cookies();
+        const supabase = createServerClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL,
+            process.env.SUPABASE_SERVICE_ROLE_KEY,
+            {
+                cookies: {
+                    get(name) {
+                        return cookieStore.get(name)?.value;
+                    },
+                    set() { },
+                    remove() { },
+                },
+            }
+        );
+
+        const { searchParams } = new URL(request.url);
         const status = searchParams.get('status');
         const limit = parseInt(searchParams.get('limit') || '50');
         const offset = parseInt(searchParams.get('offset') || '0');
@@ -14,14 +54,15 @@ export async function GET(request) {
         let query = supabase
             .from('evidence_items')
             .select(`
-        *,
-        ai_validation_results!ai_validation_results_evidence_item_id_fkey (
-          id,
-          result_json,
-          model_used,
-          created_at
-        )
-      `)
+                *,
+                ai_validation_results!ai_validation_results_evidence_item_id_fkey (
+                    id,
+                    result_json,
+                    model_used,
+                    created_at
+                )
+            `)
+            .eq('uploaded_by', user.id)
             .order('uploaded_at', { ascending: false })
             .range(offset, offset + limit - 1);
 
@@ -29,7 +70,7 @@ export async function GET(request) {
             query = query.eq('status', status);
         }
 
-        const { data, error, count } = await query;
+        const { data, error } = await query;
 
         if (error) {
             console.error('Error fetching evidence:', error);
@@ -55,14 +96,31 @@ export async function GET(request) {
     }
 }
 
-// POST /api/evidence - Upload new evidence
+// POST /api/evidence - Upload new evidence for current user
 export async function POST(request) {
     try {
-        const supabase = createServerClient();
-        const formData = await request.formData();
+        const user = await getAuthenticatedUser();
+        if (!user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
 
+        const cookieStore = await cookies();
+        const supabase = createServerClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL,
+            process.env.SUPABASE_SERVICE_ROLE_KEY,
+            {
+                cookies: {
+                    get(name) {
+                        return cookieStore.get(name)?.value;
+                    },
+                    set() { },
+                    remove() { },
+                },
+            }
+        );
+
+        const formData = await request.formData();
         const file = formData.get('file');
-        const uploadedBy = formData.get('uploaded_by') || 'anonymous';
 
         if (!file) {
             return NextResponse.json(
@@ -71,10 +129,10 @@ export async function POST(request) {
             );
         }
 
-        // Generate unique file path
+        // Generate unique file path scoped to user
         const timestamp = Date.now();
         const safeFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const filePath = `uploads/${timestamp}_${safeFileName}`;
+        const filePath = `${user.id}/${timestamp}_${safeFileName}`;
 
         // Upload to Supabase Storage
         const { data: uploadData, error: uploadError } = await supabase.storage
@@ -92,7 +150,7 @@ export async function POST(request) {
             );
         }
 
-        // Create evidence item record
+        // Create evidence item record with user ID
         const { data: evidenceItem, error: dbError } = await supabase
             .from('evidence_items')
             .insert({
@@ -100,7 +158,7 @@ export async function POST(request) {
                 file_name: file.name,
                 file_type: file.type,
                 file_size: file.size,
-                uploaded_by: uploadedBy,
+                uploaded_by: user.id,
                 status: 'pending',
             })
             .select()
@@ -108,7 +166,6 @@ export async function POST(request) {
 
         if (dbError) {
             console.error('Database insert error:', dbError);
-            // Try to clean up uploaded file
             await supabase.storage.from('evidence').remove([filePath]);
             return NextResponse.json(
                 { error: 'Failed to create evidence record', details: dbError.message },

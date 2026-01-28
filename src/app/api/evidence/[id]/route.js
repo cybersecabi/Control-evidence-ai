@@ -1,10 +1,51 @@
-import { createServerClient } from '@/lib/supabase';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+
+// Helper to get authenticated user from cookies
+async function getAuthenticatedUser() {
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        {
+            cookies: {
+                get(name) {
+                    return cookieStore.get(name)?.value;
+                },
+                set() { },
+                remove() { },
+            },
+        }
+    );
+
+    const { data: { user } } = await supabase.auth.getUser();
+    return user;
+}
 
 // GET /api/evidence/[id] - Get single evidence item with results
 export async function GET(request, { params }) {
     try {
-        const supabase = createServerClient();
+        const user = await getAuthenticatedUser();
+        if (!user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const cookieStore = await cookies();
+        const supabase = createServerClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL,
+            process.env.SUPABASE_SERVICE_ROLE_KEY,
+            {
+                cookies: {
+                    get(name) {
+                        return cookieStore.get(name)?.value;
+                    },
+                    set() { },
+                    remove() { },
+                },
+            }
+        );
+
         const { id } = await params;
 
         if (!id) {
@@ -17,16 +58,17 @@ export async function GET(request, { params }) {
         const { data, error } = await supabase
             .from('evidence_items')
             .select(`
-        *,
-        ai_validation_results!ai_validation_results_evidence_item_id_fkey (
-          id,
-          result_json,
-          model_used,
-          processing_time_ms,
-          created_at
-        )
-      `)
+                *,
+                ai_validation_results!ai_validation_results_evidence_item_id_fkey (
+                    id,
+                    result_json,
+                    model_used,
+                    processing_time_ms,
+                    created_at
+                )
+            `)
             .eq('id', id)
+            .eq('uploaded_by', user.id)
             .single();
 
         if (error) {
@@ -46,7 +88,7 @@ export async function GET(request, { params }) {
         // Get signed URL for file download
         const { data: signedUrl } = await supabase.storage
             .from('evidence')
-            .createSignedUrl(data.file_path, 3600); // 1 hour expiry
+            .createSignedUrl(data.file_path, 3600);
 
         return NextResponse.json({
             success: true,
@@ -67,7 +109,26 @@ export async function GET(request, { params }) {
 // DELETE /api/evidence/[id] - Delete evidence item
 export async function DELETE(request, { params }) {
     try {
-        const supabase = createServerClient();
+        const user = await getAuthenticatedUser();
+        if (!user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const cookieStore = await cookies();
+        const supabase = createServerClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL,
+            process.env.SUPABASE_SERVICE_ROLE_KEY,
+            {
+                cookies: {
+                    get(name) {
+                        return cookieStore.get(name)?.value;
+                    },
+                    set() { },
+                    remove() { },
+                },
+            }
+        );
+
         const { id } = await params;
 
         if (!id) {
@@ -77,11 +138,12 @@ export async function DELETE(request, { params }) {
             );
         }
 
-        // First get the file path
+        // First get the file path - only if owned by user
         const { data: evidence, error: fetchError } = await supabase
             .from('evidence_items')
             .select('file_path')
             .eq('id', id)
+            .eq('uploaded_by', user.id)
             .single();
 
         if (fetchError) {
@@ -96,11 +158,12 @@ export async function DELETE(request, { params }) {
             await supabase.storage.from('evidence').remove([evidence.file_path]);
         }
 
-        // Delete from database (cascades to validation results)
+        // Delete from database
         const { error: deleteError } = await supabase
             .from('evidence_items')
             .delete()
-            .eq('id', id);
+            .eq('id', id)
+            .eq('uploaded_by', user.id);
 
         if (deleteError) {
             console.error('Delete error:', deleteError);
