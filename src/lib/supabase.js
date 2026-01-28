@@ -1,15 +1,35 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Browser client (uses anon key)
-export function createBrowserClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// Singleton browser client
+let browserClient = null;
 
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('Missing Supabase environment variables');
+// Browser client (uses anon key) - SINGLETON
+export function createBrowserClient() {
+  if (typeof window === 'undefined') {
+    // Server-side: create new instance each time
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error('Missing Supabase environment variables');
+    }
+
+    return createClient(supabaseUrl, supabaseAnonKey);
   }
 
-  return createClient(supabaseUrl, supabaseAnonKey);
+  // Client-side: return singleton
+  if (!browserClient) {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error('Missing Supabase environment variables');
+    }
+
+    browserClient = createClient(supabaseUrl, supabaseAnonKey);
+  }
+
+  return browserClient;
 }
 
 // Server client (uses service role key for admin operations)
@@ -29,17 +49,5 @@ export function createServerClient() {
   });
 }
 
-// Singleton browser client for client components
-let browserClient = null;
-
-export function getSupabase() {
-  if (typeof window === 'undefined') {
-    throw new Error('getSupabase should only be called on the client side');
-  }
-  
-  if (!browserClient) {
-    browserClient = createBrowserClient();
-  }
-  
-  return browserClient;
-}
+// Alias for backward compatibility
+export const getSupabase = createBrowserClient;
